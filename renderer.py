@@ -307,7 +307,7 @@ def render_trending(
         rank_w = rank_bbox[2] - rank_bbox[0]
         rank_h = rank_bbox[3] - rank_bbox[1]
         draw.text(
-            (badge_x + (RANK_SIZE - rank_w) / 2, badge_y + (RANK_SIZE - rank_h) / 2 - 2),
+            (badge_x + (RANK_SIZE - rank_w) / 2, badge_y + (RANK_SIZE - rank_h) / 2 - 4),
             badge_text,
             fill=badge_fg,
             font=font_rank,
