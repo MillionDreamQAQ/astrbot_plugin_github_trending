@@ -1,14 +1,100 @@
-# astrbot-plugin-helloworld
+# astrbot_plugin_github_trending
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+🔥 GitHub Trending 榜单推送插件 for AstrBot。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+每日自动获取 GitHub Trending 热门仓库，以排行榜图片形式推送到指定的群聊或私聊。
 
-# Supports
+## ✨ 功能
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+- **📊 排行榜图片**：深色主题的榜单图片，展示仓库名称、描述、语言、Star 数
+- **⏰ 定时推送**：每天在设定时间自动推送 GitHub Trending 榜单
+- **💬 指令触发**：随时使用 `/trending` 手动获取最新榜单
+- **🎯 多目标推送**：支持同时推送到多个群聊或私聊
+- **🔑 Token 支持**：可配置 GitHub API Token 提高请求限额
+
+## 📦 安装
+
+将插件文件夹放入 AstrBot 的插件目录，安装依赖：
+
+```bash
+pip install -r requirements.txt
+```
+
+依赖项：
+- `feedparser` — RSS 解析
+- `Pillow` — 图片生成
+- `aiohttp` — 异步 HTTP 请求
+
+## 🎮 指令参考
+
+| 指令 | 说明 |
+|------|------|
+| `/trending` | 获取今日 GitHub Trending 榜单 |
+| `/trending weekly` | 获取本周 GitHub Trending 榜单 |
+| `/trending addhere` | 将当前群聊/私聊加入每日推送列表 |
+| `/trending delhere` | 将当前群聊/私聊移出每日推送列表 |
+| `/trending list` | 查看所有推送目标 |
+| `/trending time 09:00` | 设置每日推送时间（格式 HH:MM） |
+| `/trending token ghp_xxx` | 设置 GitHub Personal Access Token |
+| `/trending status` | 查看插件当前配置和状态 |
+
+## ⚙️ 配置说明
+
+### GitHub Token（可选但推荐）
+
+不配置 Token 时，GitHub API 匿名访问限制为 **60 次/小时**（刚好满足 25 个仓库 + 缓存）。
+
+配置 Token 后限制提升至 **5000 次/小时**。获取方式：
+
+1. 访问 [GitHub Settings → Personal access tokens](https://github.com/settings/tokens)
+2. 生成一个 classic token，无需勾选任何 scope
+3. 在私聊中使用 `/trending token ghp_xxxxxxxxxxxx` 配置
+
+### 推送目标
+
+在需要接收每日推送的群聊或私聊中发送 `/trending addhere` 即可添加。
+
+### 推送时间
+
+默认每天 **09:00** 推送，使用 `/trending time HH:MM` 修改。
+
+## 📸 效果预览
+
+生成的图片样式：
+
+```
+┌──────────────────────────────────────────┐
+│       🔥 GitHub Trending — Daily         │
+│          2026-07-10 周四                 │
+│                                          │
+│  🥇  owner/repo-name          ⭐ 52.3k  │
+│      A short description of the project  │
+│      🔴 Python                          │
+│  ─────────────────────────────────────  │
+│  🥈  owner/repo-name          ⭐ 38.1k  │
+│      Description text here...           │
+│      🟢 JavaScript                      │
+│  ─────────────────────────────────────  │
+│  #4  owner/repo-name          ⭐ 12.3k  │
+│      Description text...               │
+│      🟣 Rust                            │
+│  ─────────────────────────────────────  │
+│  ...                                     │
+└──────────────────────────────────────────┘
+```
+
+## 🛠️ 开发
+
+项目结构：
+
+```
+├── main.py          # 插件入口：指令处理、定时任务、消息发送
+├── fetcher.py       # 数据层：RSS 解析 + GitHub API 补全 + 缓存
+├── renderer.py      # 渲染层：Pillow 排行榜图片生成
+├── metadata.yaml    # 插件元数据
+└── requirements.txt # 依赖清单
+```
+
+## 📄 License
+
+MIT
