@@ -142,19 +142,27 @@ class TrendingFetcher:
         url = f"{TRENDING_URL}?since={since}"
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         }
+        # 注意：GitHub Web 页面不支持 API Token 认证，此 header 无效但无害
         if self._token:
             headers["Authorization"] = f"token {self._token}"
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=15) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(
-                        f"GitHub Trending 返回 HTTP {resp.status}"
-                    )
-                return await resp.text()
+            try:
+                async with session.get(url, headers=headers, timeout=15) as resp:
+                    if resp.status != 200:
+                        body_snippet = (await resp.text())[:500]
+                        raise RuntimeError(
+                            f"GitHub Trending 返回 HTTP {resp.status}\n"
+                            f"URL: {url}\n"
+                            f"响应预览: {body_snippet}"
+                        )
+                    return await resp.text()
+            except aiohttp.ClientError as e:
+                raise RuntimeError(f"网络请求失败: {e}\nURL: {url}") from e
 
     def _parse_html(self, html: str) -> list[RepoInfo]:
         """解析 GitHub Trending 页面 HTML，提取仓库列表。"""

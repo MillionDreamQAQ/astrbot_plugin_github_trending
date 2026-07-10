@@ -231,6 +231,7 @@ class GitHubTrendingPlugin(Star):
         try:
             repos = await self._fetcher.fetch(feed_type)
         except Exception as e:
+            logger.exception(f"[GitHubTrending] 获取榜单失败 ({feed_type})")
             yield event.plain_result(f"❌ 获取榜单失败: {e}")
             return
 
@@ -308,6 +309,10 @@ class GitHubTrendingPlugin(Star):
             async for result in self._toggle_lang(event, arg):
                 yield result
 
+        elif subcmd == "debug":
+            async for result in self._run_diagnostics(event):
+                yield result
+
         elif subcmd == "status":
             async for result in self._show_status(event):
                 yield result
@@ -315,7 +320,7 @@ class GitHubTrendingPlugin(Star):
         else:
             yield event.plain_result(
                 f"⚠️ 未知子命令: {subcmd}\n"
-                "可用子命令: weekly, addhere, delhere, list, time, token, lang, status"
+                "可用子命令: weekly, addhere, delhere, list, time, token, lang, debug, status"
             )
 
     # ── 子命令实现 ─────────────────────────────────────────────────────
@@ -448,6 +453,63 @@ class GitHubTrendingPlugin(Star):
                 "  /trending lang on  — 开启中文翻译\n"
                 "  /trending lang off — 关闭（显示英文原文）"
             )
+
+    async def _run_diagnostics(self, event: AstrMessageEvent):
+        """诊断命令：逐项检查网络和解析是否正常。"""
+        import traceback
+        import aiohttp
+
+        yield event.plain_result("🔍 开始诊断…")
+        lines = []
+
+        # 1. 网络连通性
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://github.com", timeout=10) as r:
+                    lines.append(f"✅ GitHub 连通: HTTP {r.status}")
+        except Exception as e:
+            lines.append(f"❌ GitHub 不可达: {e}")
+
+        # 2. Trending 页面
+        try:
+            html = await self._fetcher._fetch_html("daily")
+            lines.append(f"✅ Trending 页面: {len(html):,} 字符")
+        except Exception as e:
+            lines.append(f"❌ Trending 页面: {e}")
+
+        # 3. HTML 解析
+        if 'html' in dir():
+            try:
+                repos = self._fetcher._parse_html(html)
+                if repos:
+                    lines.append(f"✅ HTML 解析: {len(repos)} 个仓库")
+                    r = repos[0]
+                    lines.append(f"   示例: {r.full_name} ⭐{r.stars_str} +{r.stars_today_str} today")
+                else:
+                    lines.append("❌ HTML 解析: 0 个仓库，可能页面结构已变化")
+            except Exception as e:
+                lines.append(f"❌ HTML 解析异常: {e}")
+                lines.append(f"   {traceback.format_exc()[-300:]}")
+
+        # 4. 完整 fetch（含缓存状态）
+        try:
+            repos2 = await self._fetcher.fetch("daily")
+            lines.append(f"✅ 完整 fetch: {len(repos2)} 个仓库")
+        except Exception as e:
+            lines.append(f"❌ 完整 fetch: {e}")
+
+        # 5. 翻译状态
+        if self._translator:
+            lines.append(f"✅ 翻译器: 就绪 (en→zh-CN)")
+        else:
+            lines.append(f"⚠️ 翻译器: 未启用")
+
+        # 6. 配置
+        token = self._config.get("github_token", "")
+        lines.append(f"ℹ️ Token: {'已配置' if token else '未配置'}")
+        lines.append(f"ℹ️ 推送目标: {len(self._config.get('targets', []))} 个")
+
+        yield event.plain_result("\n".join(lines))
 
     async def _show_status(self, event: AstrMessageEvent):
         """显示当前配置状态。"""
