@@ -325,7 +325,7 @@ def render_trending(
                 font=font_desc,
             )
 
-        # ── 语言 ──────────────────────────────────────────────────
+        # ── 语言 + 今日 Star ──────────────────────────────────────
         lang_y = desc_y + 24
         if repo.language:
             # 语言颜色圆点
@@ -341,6 +341,18 @@ def render_trending(
                 (name_x + 16, lang_y),
                 repo.language,
                 fill=TEXT_TERTIARY,
+                font=font_lang,
+            )
+
+        # 今日新增 star（右对齐）
+        if repo.stars_today > 0:
+            today_text = f"🔥 +{repo.stars_today_str} today"
+            today_bbox = draw.textbbox((0, 0), today_text, font=font_lang)
+            today_w = today_bbox[2] - today_bbox[0]
+            draw.text(
+                (card_right - today_w, lang_y),
+                today_text,
+                fill=ACCENT_ORANGE,
                 font=font_lang,
             )
 

@@ -181,66 +181,50 @@ MOCK_EDGE_CASES = [
 # ── Fetcher 测试 ──────────────────────────────────────────────────────────
 
 
-async def test_fetcher_rss_parsing():
-    """测试 RSS 解析是否正确获取仓库列表。"""
+async def test_fetcher_html_parsing():
+    """测试 HTML 抓取+解析是否正确获取仓库列表。"""
     from fetcher import TrendingFetcher
 
-    header("Fetcher: RSS 解析")
+    header("Fetcher: HTML 抓取 & 解析")
 
     fetcher = TrendingFetcher()
-    entries = fetcher._parse_rss("daily")
 
-    if not entries:
-        fail("RSS 返回空列表，请检查网络或 RSS 源是否可用")
+    try:
+        html = await fetcher._fetch_html("daily")
+    except Exception as e:
+        fail(f"抓取 HTML 失败: {e}")
         return
 
-    ok(f"成功获取 {len(entries)} 个仓库")
+    ok(f"成功获取 HTML ({len(html):,} 字符)")
 
-    # 验证每个条目结构
-    required_keys = {"owner", "repo", "url"}
-    for i, entry in enumerate(entries[:5]):
-        missing = required_keys - set(entry.keys())
-        if missing:
-            fail(f"条目 {i} 缺少字段: {missing}")
-        else:
-            ok(f"条目 {i+1}: {entry['owner']}/{entry['repo']} → {entry['url']}")
+    repos = fetcher._parse_html(html)
+    if not repos:
+        fail("解析出空列表")
+        return
 
-    # 验证 owner/repo 非空
-    empty_names = [
-        i for i, e in enumerate(entries) if not e["owner"] or not e["repo"]
+    ok(f"成功解析出 {len(repos)} 个仓库")
+
+    # 验证前 5 个条目
+    for repo in repos[:5]:
+        ok(f"  #{repo.rank} {repo.full_name} ⭐{repo.stars_str}"
+           f" {'🔥 +' + repo.stars_today_str if repo.stars_today else ''}"
+           f" {'🔴' + repo.language if repo.language else ''}")
+
+    # 验证 RepoInfo 字段完整性
+    r = repos[0]
+    checks = [
+        ("rank == 1", r.rank == 1),
+        ("owner 非空", bool(r.owner)),
+        ("repo 非空", bool(r.repo)),
+        ("url 格式正确", r.url.startswith("https://github.com/")),
+        ("stars > 0", r.stars > 0),
+        ("full_name 正确", r.full_name == f"{r.owner}/{r.repo}"),
     ]
-    if empty_names:
-        fail(f"存在空名称的条目，索引: {empty_names}")
-    else:
-        ok("所有条目 owner/repo 均非空")
-
-
-async def test_fetcher_github_api():
-    """测试 GitHub API 补全（需要联网，无 Token 亦可）。"""
-    from fetcher import TrendingFetcher
-    import aiohttp
-
-    header("Fetcher: GitHub API 补全")
-
-    fetcher = TrendingFetcher()
-
-    async with aiohttp.ClientSession() as session:
-        import asyncio as aio_mod
-        sem = aio_mod.Semaphore(3)
-
-        # 测试单个知名仓库
-        result = await fetcher._enrich_repo(session, sem, "github", "gitignore")
-
-        if result["stars"] > 0:
-            ok(f"github/gitignore: ⭐ {result['stars']}, 语言: {result['language'] or '(无)'}")
+    for name, passed in checks:
+        if passed:
+            ok(f"  {name}")
         else:
-            fail("无法获取 github/gitignore 的 star 数（可能被限流）")
-
-        # 验证返回结构
-        for key in ("stars", "language", "description"):
-            if key not in result:
-                fail(f"返回结果缺少字段: {key}")
-        ok("返回结果结构完整 (stars, language, description)")
+            fail(f"  {name}: {getattr(r, name, 'N/A')!r}")
 
 
 async def test_fetcher_cache():
@@ -314,9 +298,14 @@ async def test_fetcher_full_flow():
         ("owner", bool(r.owner)),
         ("repo", bool(r.repo)),
         ("url", r.url.startswith("https://github.com/")),
-        ("stars_str", bool(r.stars_str) or r.stars == 0),
+        ("stars", r.stars > 0),
+        ("stars_str", bool(r.stars_str)),
+        ("stars_today", r.stars_today >= 0),
         ("full_name", r.full_name == f"{r.owner}/{r.repo}"),
     ]
+    # 如果有今日 star 数据，stars_today_str 应非空
+    if r.stars_today > 0:
+        checks.append(("stars_today_str", bool(r.stars_today_str)))
     for name, passed in checks:
         if passed:
             ok(f"RepoInfo.{name}: {getattr(r, name)!r}")
@@ -351,6 +340,8 @@ def _make_mock_repos(data_list: list[dict]):
             language_color=d.get("language_color", ""),
             stars=d.get("stars", 0),
             stars_str=d.get("stars_str", "0"),
+            stars_today=d.get("stars_today", 0),
+            stars_today_str=d.get("stars_today_str", ""),
         )
         for d in data_list
     ]
@@ -557,8 +548,7 @@ async def main():
         return
 
     await test_fetcher_cache()  # 缓存测试无需联网
-    await test_fetcher_rss_parsing()
-    await test_fetcher_github_api()
+    await test_fetcher_html_parsing()
 
     if fetch_only:
         ok_all = summary()

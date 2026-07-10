@@ -1,24 +1,20 @@
 """GitHub Trending 数据获取层。
 
-RSS 解析 + GitHub API 补全元数据 + 内存缓存。
+直接抓取 GitHub Trending 页面 (https://github.com/trending)，
+用 BeautifulSoup 解析 HTML，提取仓库排名、名称、描述、语言、Star 数等信息。
 """
 from __future__ import annotations
 
-import asyncio
 import re
 import time
 from dataclasses import dataclass, field
 from typing import Optional
 
 import aiohttp
-import feedparser
+from bs4 import BeautifulSoup
 
-# ── RSS 源 ──────────────────────────────────────────────────────────────
-RSS_DAILY = "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml"
-RSS_WEEKLY = "https://mshibanami.github.io/GitHubTrendingRSS/weekly/all.xml"
-
-# GitHub API 模板
-GITHUB_API_REPO = "https://api.github.com/repos/{owner}/{repo}"
+# ── Trending 页面 URL ────────────────────────────────────────────────────
+TRENDING_URL = "https://github.com/trending"
 
 # 语言 → 显示色（部分常用语言）
 LANGUAGE_COLORS: dict[str, str] = {
@@ -48,6 +44,14 @@ LANGUAGE_COLORS: dict[str, str] = {
     "Elixir": "#6e4a7e",
     "Haskell": "#5e5086",
     "Clojure": "#db5855",
+    "MDX": "#fcb32c",
+    "SCSS": "#c6538c",
+    "Dockerfile": "#384d54",
+    "Makefile": "#427819",
+    "CMake": "#DA3434",
+    "Objective-C": "#438eff",
+    "Blade": "#f7523f",
+    "Astro": "#ff5a03",
 }
 
 
@@ -63,7 +67,9 @@ class RepoInfo:
     language: str = ""
     language_color: str = ""
     stars: int = 0
-    stars_str: str = ""  # 格式化后的 star 数，如 "12.3k"
+    stars_str: str = ""
+    stars_today: int = 0
+    stars_today_str: str = ""
 
     @property
     def full_name(self) -> str:
@@ -73,15 +79,15 @@ class RepoInfo:
 class TrendingFetcher:
     """GitHub Trending 数据获取器。
 
-    1. 从 RSS feed 获取仓库列表
-    2. 通过 GitHub API 批量补全 stars / language / description
-    3. 内存缓存，避免短时间内重复请求
+    直接抓取 GitHub Trending 页面并解析 HTML，一个请求拿到所有数据。
     """
 
     def __init__(self, github_token: str = ""):
         self._token = github_token
-        self._cache: dict[str, tuple[list[RepoInfo], float]] = {}  # key → (data, timestamp)
+        self._cache: dict[str, tuple[list[RepoInfo], float]] = {}
         self._cache_ttl = 300  # 5 分钟缓存
+
+    # ── 缓存 ─────────────────────────────────────────────────────────────
 
     def _cache_key(self, feed_type: str) -> str:
         return f"trending_{feed_type}"
@@ -99,83 +105,15 @@ class TrendingFetcher:
     def _set_cache(self, feed_type: str, data: list[RepoInfo]) -> None:
         self._cache[self._cache_key(feed_type)] = (data, time.time())
 
-    # ── RSS 解析 ──────────────────────────────────────────────────────
+    def clear_cache(self) -> None:
+        self._cache.clear()
 
-    def _parse_rss(self, feed_type: str) -> list[dict]:
-        """解析 RSS，返回原始条目列表。"""
-        url = RSS_DAILY if feed_type == "daily" else RSS_WEEKLY
-        feed = feedparser.parse(url)
+    # ── 格式化工具 ────────────────────────────────────────────────────────
 
-        entries = []
-        for entry in feed.entries:
-            title = getattr(entry, "title", "").strip()
-            link = getattr(entry, "link", "").strip()
-
-            # title 格式: "owner/repo"
-            if "/" not in title:
-                continue
-
-            owner, repo = title.split("/", 1)
-            entries.append(
-                {
-                    "owner": owner.strip(),
-                    "repo": repo.strip(),
-                    "url": link,
-                }
-            )
-
-        return entries
-
-    # ── GitHub API ─────────────────────────────────────────────────────
-
-    async def _enrich_repo(
-        self,
-        session: aiohttp.ClientSession,
-        sem: asyncio.Semaphore,
-        owner: str,
-        repo: str,
-    ) -> dict:
-        """通过 GitHub API 获取单个仓库的 stars / language / description。"""
-        url = GITHUB_API_REPO.format(owner=owner, repo=repo)
-        headers = {"Accept": "application/vnd.github.v3+json"}
-        if self._token:
-            headers["Authorization"] = f"token {self._token}"
-
-        result = {"stars": 0, "language": "", "description": ""}
-
-        async with sem:
-            try:
-                async with session.get(url, headers=headers, timeout=10) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        result["stars"] = data.get("stargazers_count", 0)
-                        result["language"] = data.get("language") or ""
-                        result["description"] = (data.get("description") or "").strip()
-                    elif resp.status == 403:
-                        # 速率限制
-                        result["description"] = "[API rate limited]"
-                    elif resp.status == 404:
-                        result["description"] = "[Repo not found]"
-            except (aiohttp.ClientError, asyncio.TimeoutError):
-                result["description"] = "[Network error]"
-
-        return result
-
-    async def _enrich_all(
-        self, session: aiohttp.ClientSession, entries: list[dict]
-    ) -> None:
-        """并发补全所有仓库的元数据。"""
-        sem = asyncio.Semaphore(5)  # 并发上限，避免触发限流
-
-        tasks = [
-            self._enrich_repo(session, sem, e["owner"], e["repo"]) for e in entries
-        ]
-        results = await asyncio.gather(*tasks)
-
-        for entry, result in zip(entries, results):
-            entry.update(result)
-
-    # ── 格式化 ─────────────────────────────────────────────────────────
+    @staticmethod
+    def _parse_int(text: str) -> int:
+        """解析 "2,194" 或 "76,258" 格式的数字。"""
+        return int(text.replace(",", "").strip())
 
     @staticmethod
     def _format_stars(count: int) -> str:
@@ -195,7 +133,112 @@ class TrendingFetcher:
             return desc[: max_len - 3] + "..."
         return desc
 
-    # ── 公开接口 ───────────────────────────────────────────────────────
+    # ── HTML 抓取 & 解析 ──────────────────────────────────────────────────
+
+    async def _fetch_html(self, feed_type: str) -> str:
+        """获取 GitHub Trending 页面 HTML。"""
+        since = "daily" if feed_type == "daily" else "weekly"
+        url = f"{TRENDING_URL}?since={since}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+        }
+        if self._token:
+            headers["Authorization"] = f"token {self._token}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=15) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(
+                        f"GitHub Trending 返回 HTTP {resp.status}"
+                    )
+                return await resp.text()
+
+    def _parse_html(self, html: str) -> list[RepoInfo]:
+        """解析 GitHub Trending 页面 HTML，提取仓库列表。"""
+        soup = BeautifulSoup(html, "html.parser")
+        articles = soup.find_all("article", class_="Box-row")
+
+        repos: list[RepoInfo] = []
+        rank = 0
+
+        for article in articles:
+            rank += 1
+
+            # ── 仓库名称 ──────────────────────────────────────────────
+            h2 = article.find("h2", class_=re.compile(r"h3|lh-condensed"))
+            name_link = h2.find("a", class_="Link") if h2 else None
+            if not name_link:
+                continue
+
+            href = name_link.get("href", "").strip()
+            # href 格式: "/owner/repo"
+            parts = href.strip("/").split("/")
+            if len(parts) < 2:
+                continue
+            owner, repo = parts[0], parts[1]
+
+            # 清理 repo 名（可能含多余空白）
+            repo = repo.strip()
+
+            # ── 描述 ──────────────────────────────────────────────────
+            desc_el = article.find("p", class_=re.compile(r"col-9|color-fg-muted|my-1"))
+            description = desc_el.get_text(strip=True) if desc_el else ""
+
+            # ── 语言 ──────────────────────────────────────────────────
+            lang_color_el = article.find("span", class_="repo-language-color")
+            language = ""
+            language_color = ""
+            if lang_color_el:
+                style = lang_color_el.get("style", "")
+                color_match = re.search(r"#([0-9a-fA-F]{6})", style)
+                if color_match:
+                    language_color = f"#{color_match.group(1)}"
+                # 语言名在相邻的 span 中
+                lang_name_el = article.find("span", itemprop="programmingLanguage")
+                if lang_name_el:
+                    language = lang_name_el.get_text(strip=True)
+
+            # ── 总 Star 数 ────────────────────────────────────────────
+            stars_link = article.find("a", href=re.compile(r"/stargazers$"))
+            stars = 0
+            if stars_link:
+                stars_text = stars_link.get_text(strip=True)
+                # 提取数字部分
+                stars_match = re.search(r"[\d,]+", stars_text)
+                if stars_match:
+                    stars = self._parse_int(stars_match.group())
+
+            # ── 今日 Star 数 ──────────────────────────────────────────
+            stars_today = 0
+            today_el = article.find("span", class_="float-sm-right")
+            if today_el:
+                today_text = today_el.get_text(strip=True)
+                today_match = re.search(r"([\d,]+)\s*stars?\s*today", today_text)
+                if today_match:
+                    stars_today = self._parse_int(today_match.group(1))
+
+            # ── 构造 RepoInfo ─────────────────────────────────────────
+            repos.append(
+                RepoInfo(
+                    rank=rank,
+                    owner=owner,
+                    repo=repo,
+                    url=f"https://github.com/{owner}/{repo}",
+                    description=self._format_description(description),
+                    language=language,
+                    language_color=LANGUAGE_COLORS.get(language, language_color),
+                    stars=stars,
+                    stars_str=self._format_stars(stars),
+                    stars_today=stars_today,
+                    stars_today_str=self._format_stars(stars_today) if stars_today > 0 else "",
+                )
+            )
+
+        return repos
+
+    # ── 公开接口 ──────────────────────────────────────────────────────────
 
     async def fetch(self, feed_type: str = "daily") -> list[RepoInfo]:
         """获取 trending 数据（优先缓存）。
@@ -204,50 +247,23 @@ class TrendingFetcher:
             feed_type: "daily" 或 "weekly"
 
         Returns:
-            RepoInfo 列表，按 RSS 原始顺序排列。
+            RepoInfo 列表，按排名顺序排列。
         """
         # 查缓存
         cached = self._get_cached(feed_type)
         if cached is not None:
             return cached
 
-        # 解析 RSS
-        entries = self._parse_rss(feed_type)
-        if not entries:
+        # 抓取页面
+        html = await self._fetch_html(feed_type)
+
+        # 解析 HTML
+        repos = self._parse_html(html)
+        if not repos:
             raise RuntimeError(
-                f"RSS feed returned no entries for {feed_type}. "
-                f"URL: {RSS_DAILY if feed_type == 'daily' else RSS_WEEKLY}"
-            )
-
-        # 通过 GitHub API 补全
-        async with aiohttp.ClientSession() as session:
-            await self._enrich_all(session, entries)
-
-        # 构造 RepoInfo 列表
-        repos: list[RepoInfo] = []
-        for i, entry in enumerate(entries):
-            stars = entry.get("stars", 0)
-            language = entry.get("language", "")
-            description = self._format_description(entry.get("description", ""))
-
-            repos.append(
-                RepoInfo(
-                    rank=i + 1,
-                    owner=entry["owner"],
-                    repo=entry["repo"],
-                    url=entry["url"],
-                    description=description,
-                    language=language,
-                    language_color=LANGUAGE_COLORS.get(language, "#8b8b8b"),
-                    stars=stars,
-                    stars_str=self._format_stars(stars),
-                )
+                f"未能从 GitHub Trending 页面解析到任何仓库（{feed_type}）。"
             )
 
         # 写缓存
         self._set_cache(feed_type, repos)
         return repos
-
-    def clear_cache(self) -> None:
-        """清除所有缓存。"""
-        self._cache.clear()
