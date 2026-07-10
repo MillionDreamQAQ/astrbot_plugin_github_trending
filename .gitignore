@@ -1,3 +1,11 @@
+# ── 项目特定 ──────────────────────────────────────────────────────────────
+# 测试生成的预览图片
+test_preview_*.png
+# AstrBot 运行时数据
+data/
+# 插件配置快照
+cmd_config.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
