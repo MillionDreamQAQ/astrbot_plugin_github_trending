@@ -13,7 +13,10 @@ from typing import Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
-from fetcher import RepoInfo
+try:
+    from .fetcher import RepoInfo
+except ImportError:
+    from fetcher import RepoInfo
 
 # ── 配色 (GitHub Dark 风格) ────────────────────────────────────────────
 BG_COLOR = "#0d1117"  # 主背景
