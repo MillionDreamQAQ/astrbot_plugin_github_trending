@@ -296,6 +296,10 @@ class GitHubTrendingPlugin(Star):
             async for result in self._fetch_and_send(event, "daily"):
                 yield result
 
+        elif subcmd in ("help", "h"):
+            async for result in self._show_help(event):
+                yield result
+
         elif subcmd == "weekly":
             async for result in self._fetch_and_send(event, "weekly"):
                 yield result
@@ -343,6 +347,26 @@ class GitHubTrendingPlugin(Star):
             )
 
     # ── 子命令实现 ─────────────────────────────────────────────────────
+
+    async def _show_help(self, event: AstrMessageEvent):
+        """显示帮助信息。"""
+        help_text = (
+            "🔥 GitHub Trending 插件\n"
+            "─────────────────────\n"
+            "/trending               获取今日榜单\n"
+            "/trending weekly        获取本周榜单\n"
+            "/trending addhere       将当前会话加入每日推送\n"
+            "/trending delhere       将当前会话移出推送\n"
+            "/trending list          查看推送目标列表\n"
+            "/trending time HH:MM    设置推送时间（如 09:00）\n"
+            "/trending lang on/off   开关中文翻译\n"
+            "/trending proxy URL     设置代理（如 http://127.0.0.1:7890）\n"
+            "/trending token ghp_xxx 设置 GitHub Token\n"
+            "/trending debug         诊断网络/解析/翻译\n"
+            "/trending status        查看完整配置\n"
+            "/trending help          显示此帮助"
+        )
+        yield event.plain_result(help_text)
 
     async def _add_target(self, event: AstrMessageEvent):
         """将当前会话加入推送列表。"""

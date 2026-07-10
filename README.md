@@ -37,6 +37,7 @@ pip install -r requirements.txt
 | `/trending lang on/off` | 开启/关闭描述翻译（默认开启） |
 | `/trending proxy http://x.x.x.x:port` | 设置代理 |
 | `/trending token ghp_xxx` | 设置 GitHub Token（可选） |
+| `/trending help` | 显示命令帮助 |
 | `/trending debug` | 诊断：逐项检查网络/解析/翻译 |
 | `/trending status` | 查看当前配置和状态 |
 

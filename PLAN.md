@@ -24,7 +24,7 @@ github.com/trending ─→ BS4 parse ─→ translate (opt) ─→ cache (5min)
 
 ## Commands
 
-`/trending [weekly|addhere|delhere|list|time|lang|proxy|token|debug|status]`
+`/trending [help|weekly|addhere|delhere|list|time|lang|proxy|token|debug|status]`
 
 ## Key Features
 
