@@ -6,11 +6,12 @@
 
 ## ✨ 功能
 
-- **📊 排行榜图片**：深色主题的榜单图片，展示仓库名称、描述、语言、Star 数
+- **📊 排行榜图片**：深色主题的榜单图片，展示仓库名称、描述、语言、Star 数、今日新增 Star
 - **⏰ 定时推送**：每天在设定时间自动推送 GitHub Trending 榜单
 - **💬 指令触发**：随时使用 `/trending` 手动获取最新榜单
 - **🎯 多目标推送**：支持同时推送到多个群聊或私聊
-- **🔑 Token 支持**：可配置 GitHub API Token 提高请求限额
+- **🔌 直接抓取**：直接从 GitHub Trending 页面抓取数据，与网站实时同步
+- **🔑 Token 支持**：可配置 GitHub Token 提高请求限额（可选）
 
 ## 📦 安装
 
@@ -21,7 +22,7 @@ pip install -r requirements.txt
 ```
 
 依赖项：
-- `feedparser` — RSS 解析
+- `beautifulsoup4` — HTML 解析
 - `Pillow` — 图片生成
 - `aiohttp` — 异步 HTTP 请求
 
@@ -40,11 +41,13 @@ pip install -r requirements.txt
 
 ## ⚙️ 配置说明
 
-### GitHub Token（可选但推荐）
+### 数据来源
 
-不配置 Token 时，GitHub API 匿名访问限制为 **60 次/小时**（刚好满足 25 个仓库 + 缓存）。
+插件直接抓取 [GitHub Trending](https://github.com/trending) 页面，数据与网站实时同步，包含排名、描述、语言、总 Star 数和今日新增 Star 数。
 
-配置 Token 后限制提升至 **5000 次/小时**。获取方式：
+### GitHub Token（可选）
+
+不配置 Token 也可正常使用（匿名访问 GitHub Trending 页面）。如果遇到频繁的 429 限流，可配置 Token：
 
 1. 访问 [GitHub Settings → Personal access tokens](https://github.com/settings/tokens)
 2. 生成一个 classic token，无需勾选任何 scope
@@ -69,15 +72,15 @@ pip install -r requirements.txt
 │                                          │
 │  🥇  owner/repo-name          ⭐ 52.3k  │
 │      A short description of the project  │
-│      🔴 Python                          │
+│      🔴 Python        🔥 +2.3k today    │
 │  ─────────────────────────────────────  │
 │  🥈  owner/repo-name          ⭐ 38.1k  │
 │      Description text here...           │
-│      🟢 JavaScript                      │
+│      🟢 JavaScript      🔥 +1.8k today  │
 │  ─────────────────────────────────────  │
 │  #4  owner/repo-name          ⭐ 12.3k  │
 │      Description text...               │
-│      🟣 Rust                            │
+│      🟣 Rust            🔥 +856 today   │
 │  ─────────────────────────────────────  │
 │  ...                                     │
 └──────────────────────────────────────────┘
@@ -89,8 +92,9 @@ pip install -r requirements.txt
 
 ```
 ├── main.py          # 插件入口：指令处理、定时任务、消息发送
-├── fetcher.py       # 数据层：RSS 解析 + GitHub API 补全 + 缓存
+├── fetcher.py       # 数据层：GitHub Trending 页面抓取 + HTML 解析 + 缓存
 ├── renderer.py      # 渲染层：Pillow 排行榜图片生成
+├── test_local.py    # 本地测试：fetcher + renderer（无需 AstrBot）
 ├── metadata.yaml    # 插件元数据
 └── requirements.txt # 依赖清单
 ```

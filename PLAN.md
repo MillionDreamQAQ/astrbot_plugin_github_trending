@@ -1,139 +1,51 @@
 # GitHub Trending AstrBot Plugin — Implementation Plan
 
-## Context
+> 最后更新: 2026-07-10 | 状态: ✅ 已实现
 
-Build an AstrBot plugin that fetches GitHub trending repositories daily, renders them as a leaderboard-style image, and pushes to configured chat groups/users via commands. The user has an RSS feed (`https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml`) but it only provides repo names + links — lacks stars, language, etc., so we enrich via GitHub API.
-
-## Requirements Summary
-
-- **Image style**: Ranked leaderboard list (🥇🥈🥉 for top 3, then #4-#25)
-- **Config**: Via chat commands (`/trending addhere`, `/trending delhere`, etc.)
-- **Language filter**: Not needed for v1
-- **Delivery**: Daily scheduled push + manual `/trending` command
-
-## Architecture
+## Architecture (Actual)
 
 ```
 main.py  (plugin entry, commands, scheduler)
-├── fetcher.py     — RSS parse + GitHub API enrichment + cache
+├── fetcher.py     — GitHub Trending page scraping + HTML parsing + cache
 ├── renderer.py    — Pillow image generation (leaderboard list)
 └── metadata.yaml  — plugin metadata
 ```
 
-## Files to Create/Modify
+## Files
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `main.py` | Rewrite | Plugin class, 8 commands, scheduler loop |
-| `fetcher.py` | Create | Data layer: RSS + GitHub API |
-| `renderer.py` | Create | Pillow-based leaderboard image |
-| `metadata.yaml` | Update | Plugin name, desc, author |
-| `requirements.txt` | Create | Dependencies |
-| `README.md` | Update | Usage docs |
+| File | Purpose |
+|------|---------|
+| `main.py` | Plugin class, 8 commands, asyncio scheduler loop, KV config |
+| `fetcher.py` | Scrape `github.com/trending`, parse with BeautifulSoup, 5min cache |
+| `renderer.py` | Dark theme leaderboard PNG, top 3 medals, language dots, stars today |
+| `test_local.py` | Offline + online tests for fetcher and renderer |
+| `metadata.yaml` | Plugin metadata |
+| `requirements.txt` | beautifulsoup4, Pillow, aiohttp |
 
-## Data Flow
-
-```
-RSS Feed ──→ repo list (name, link)
-                │
-                ▼
-         GitHub API (per repo) ──→ stars, language, description
-                │
-                ▼
-         Cache in memory (5 min TTL, avoid API rate limits)
-                │
-                ▼
-         Pillow Renderer ──→ PNG bytes (base64)
-                │
-                ▼
-         Send via event.image_result() or context.send_message()
-```
-
-## Commands
-
-| Command | Handler | Description |
-|---------|---------|-------------|
-| `/trending` | `daily_trending` | Fetch & return daily trending image |
-| `/trending weekly` | `weekly_trending` | Fetch & return weekly trending image |
-| `/trending addhere` | `add_target` | Add current group/user to daily push list |
-| `/trending delhere` | `del_target` | Remove current group/user from push list |
-| `/trending list` | `list_targets` | Show all configured push targets |
-| `/trending time HH:MM` | `set_time` | Set daily push time (admin only) |
-| `/trending token <ghp_xxx>` | `set_token` | Set GitHub API token |
-| `/trending status` | `status` | Show full config (push time, targets, token set or not) |
-
-## Image Design (Ranked Leaderboard)
+## Data Flow (Final)
 
 ```
-┌──────────────────────────────────────────┐
-│       🔥 GitHub Trending — Daily         │
-│          2026-07-10 周四                 │
-│                                          │
-│  🥇  owner/repo-name          ⭐ 52.3k  │
-│      A short description of the project  │
-│      🔴 Python                          │
-│  ─────────────────────────────────────  │
-│  🥈  owner/repo-name          ⭐ 38.1k  │
-│      Description text here...           │
-│      🟢 JavaScript                      │
-│  ─────────────────────────────────────  │
-│  🥉  owner/repo-name          ⭐ 21.7k  │
-│      Description text here...           │
-│      🟡 TypeScript                      │
-│  ─────────────────────────────────────  │
-│  #4  owner/repo-name          ⭐ 12.3k  │
-│      Description text...               │
-│      🟣 Rust                            │
-│  ─────────────────────────────────────  │
-│  ... (up to 25 items)                   │
-│                                          │
-│   共 25 个项目 · GitHub Trending · 每   │
-│              日更新                      │
-└──────────────────────────────────────────┘
+github.com/trending?since=daily ──→ BeautifulSoup parse ──→ RepoInfo list
+                                                                    │
+                                              Cache (5 min TTL) ←──┘
+                                                                    │
+                                              Pillow Renderer ←─────┘
+                                                                    │
+                                              image bytes (base64) ─→ send
 ```
 
-- Width: 800px, height dynamic based on item count
-- Background: dark (#1a1b27) with light text for a terminal/tech feel
-- Top 3: medal emoji + gold/silver/bronze accent
-- Language colors: standard GitHub language colors
-- Star count: right-aligned with ⭐ icon
-- Each item takes ~80px height × 800px width
+## Key Design Decisions
 
-## Scheduling
+- **直接抓取** 替代 RSS+API：数据实时一致，一个请求拿全部，还多了今日新增 Star
+- **BeautifulSoup** 而非正则：更健壮地应对 HTML 结构变化
+- **asyncio.create_task** 而非 APScheduler：单一定时任务，省依赖
+- **Image.fromBase64()** 而非 image_result()：bytes 图片必须转 base64 通过消息链发送
+- **try/except ImportError** 兼容 AstrBot 包内导入和本地独立测试
 
-Use `asyncio.create_task` with a loop (Pattern A from AstrBot ecosystem):
-- Calculate time until next `push_time` (default 09:00)
-- Sleep, then push, then wait 60s to avoid double-fire
-- Recalculate for next day
-
-## Config Storage
-
-Use AstrBot KV store (`self.put_kv_data` / `self.get_kv_data`):
-
-```json
-{
-  "targets": ["qq:group:123456", "qq:friend:789012"],
-  "push_time": "09:00",
-  "github_token": "",
-  "daily_enabled": true
-}
-```
-
-## Key Dependencies
+## Dependencies
 
 ```
-feedparser>=6.0.0      # RSS parsing
-Pillow>=10.0.0          # Image generation
-aiohttp>=3.8.0          # Async GitHub API calls
+beautifulsoup4>=4.12.0    # HTML parsing
+Pillow>=10.0.0             # Image generation
+aiohttp>=3.8.0             # Async HTTP
 ```
-
-No APScheduler needed — asyncio.create_task loop is sufficient for a single daily job.
-
-## Verification
-
-1. **RSS parsing**: Run fetcher, verify 25 repos returned with valid names/links
-2. **GitHub API**: Run fetcher with enrichment, verify stars/language populated
-3. **Image generation**: Generate image, verify readable text and layout
-4. **Commands**: Test `/trending`, `/trending addhere`, `/trending list`, `/trending time`
-5. **Scheduling**: Set time 1 min ahead, verify push fires
-6. **Edge cases**: GitHub API rate limited → graceful fallback (show what we have); RSS unavailable → error message; empty target list → reminder to add targets
