@@ -498,11 +498,26 @@ class GitHubTrendingPlugin(Star):
         except Exception as e:
             lines.append(f"❌ 完整 fetch: {e}")
 
-        # 5. 翻译状态
+        # 5. 翻译状态 + 实际测试
         if self._translator:
             lines.append(f"✅ 翻译器: 就绪 (en→zh-CN)")
+            try:
+                test_result = await self._translator.translate("Hello world test")
+                if test_result and test_result != "Hello world test":
+                    lines.append(f"   翻译测试: 'Hello world test' → '{test_result}'")
+                else:
+                    lines.append(f"   ❌ 翻译测试失败: 返回原文，Google API 可能不可达")
+            except Exception as e:
+                lines.append(f"   ❌ 翻译测试异常: {e}")
         else:
-            lines.append(f"⚠️ 翻译器: 未启用")
+            lines.append(f"⚠️ 翻译器: 未启用（使用 /trending lang on 开启）")
+
+        # 6. 实际数据中的翻译效果
+        if 'repos2' in dir() and repos2:
+            cn = sum(1 for r in repos2 if any('一' <= c <= '鿿' for c in r.description))
+            lines.append(f"   实际翻译覆盖: {cn}/{len(repos2)} 条描述含中文")
+            if cn == 0:
+                lines.append(f"   ⚠️ 翻译未生效，请检查服务器能否访问 translate.googleapis.com")
 
         # 6. 配置
         token = self._config.get("github_token", "")

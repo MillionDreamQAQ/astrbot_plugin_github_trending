@@ -256,8 +256,10 @@ class TrendingFetcher:
 
         try:
             translated = await self._translator.translate_batch(texts)
-        except Exception:
-            return  # 翻译失败静默降级，保留原文
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"翻译请求失败，保留英文原文: {e}")
+            return
 
         # 替换
         idx = 0

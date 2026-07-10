@@ -5,11 +5,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from typing import Optional
 
 import aiohttp
+
+logger = logging.getLogger(__name__)
 
 # Google Translate 免费接口
 _TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
@@ -84,7 +87,8 @@ class Translator:
                     return text
                 else:
                     data = await resp.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+            logger.warning(f"翻译请求失败: {e}")
             return text  # 网络错误返回原文
 
         # 解析结果: [[["译文", "原文", ...], ...], ...]
@@ -157,7 +161,10 @@ class Translator:
                 key = self._cache_key(original)
                 self._cache[key] = translated_part
         else:
-            # 回退：逐个翻译
+            # 拆分数量不匹配，说明批量翻译失败，逐个重试
+            logger.warning(
+                f"批量翻译拆分异常: 预期 {len(texts)} 段，实际 {len(parts)} 段，回退逐条翻译"
+            )
             for text in texts:
                 await self.translate(text)
                 await asyncio.sleep(0.2)
