@@ -234,7 +234,7 @@ def render_trending(
         rw = draw.textbbox((0, 0), badge_text, font=font_rank)[2]
         rh = draw.textbbox((0, 0), badge_text, font=font_rank)[3] - draw.textbbox((0, 0), badge_text, font=font_rank)[1]
         draw.text(
-            (bx + (RS - rw) / 2, by + (RS - rh) / 2 - 4 * s),
+            (bx + (RS - rw) / 2, by + (RS - rh) / 2 - 6 * s),
             badge_text, fill=badge_fg, font=font_rank,
         )
 
