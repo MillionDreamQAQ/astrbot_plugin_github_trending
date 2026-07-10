@@ -82,8 +82,9 @@ class TrendingFetcher:
     直接抓取 GitHub Trending 页面并解析 HTML，一个请求拿到所有数据。
     """
 
-    def __init__(self, github_token: str = ""):
+    def __init__(self, github_token: str = "", translator=None):
         self._token = github_token
+        self._translator = translator
         self._cache: dict[str, tuple[list[RepoInfo], float]] = {}
         self._cache_ttl = 300  # 5 分钟缓存
 
@@ -238,6 +239,26 @@ class TrendingFetcher:
 
         return repos
 
+    async def _translate_descriptions(self, repos: list[RepoInfo]):
+        """批量翻译仓库描述。翻译结果直接替换原描述字段。"""
+        # 收集需要翻译的描述（跳过空字符串和已缓存项）
+        texts = [r.description for r in repos if r.description]
+        if not texts:
+            return
+
+        try:
+            translated = await self._translator.translate_batch(texts)
+        except Exception:
+            return  # 翻译失败静默降级，保留原文
+
+        # 替换
+        idx = 0
+        for repo in repos:
+            if repo.description:
+                if idx < len(translated):
+                    repo.description = translated[idx]
+                idx += 1
+
     # ── 公开接口 ──────────────────────────────────────────────────────────
 
     async def fetch(self, feed_type: str = "daily") -> list[RepoInfo]:
@@ -259,6 +280,11 @@ class TrendingFetcher:
 
         # 解析 HTML
         repos = self._parse_html(html)
+
+        # 翻译描述（如果配置了翻译器）
+        if self._translator and repos:
+            await self._translate_descriptions(repos)
+
         if not repos:
             raise RuntimeError(
                 f"未能从 GitHub Trending 页面解析到任何仓库（{feed_type}）。"

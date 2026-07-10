@@ -26,9 +26,11 @@ from astrbot.api.message_components import Image, Plain
 try:
     from .fetcher import TrendingFetcher
     from .renderer import render_trending
+    from .translator import Translator
 except ImportError:
     from fetcher import TrendingFetcher
     from renderer import render_trending
+    from translator import Translator
 
 
 # ── 默认配置 ────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ DEFAULT_CONFIG: dict = {
     "targets": [],  # [{"type": "group"/"user", "umo": "platform:type:id"}]
     "push_time": "09:00",
     "github_token": "",
+    "translate_enabled": True,  # 默认开启翻译
 }
 
 PLUGIN_NAME = "astrbot_plugin_github_trending"
@@ -48,9 +51,27 @@ class GitHubTrendingPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self._config: dict = {**DEFAULT_CONFIG, **(config or {})}
-        self._fetcher = TrendingFetcher(github_token=self._config.get("github_token", ""))
+        self._translator: Translator | None = None
+        self._init_translator()
+        self._fetcher = TrendingFetcher(
+            github_token=self._config.get("github_token", ""),
+            translator=self._translator,
+        )
         self._scheduler_task: asyncio.Task | None = None
         self._running = False
+
+    def _init_translator(self):
+        """根据配置初始化或销毁翻译器。"""
+        if self._config.get("translate_enabled", True):
+            if self._translator is None:
+                self._translator = Translator(source="en", target="zh-CN")
+        else:
+            if self._translator:
+                self._translator = None
+        # 同步到 fetcher
+        if hasattr(self, "_fetcher"):
+            self._fetcher._translator = self._translator
+            self._fetcher.clear_cache()  # 切换翻译状态后清缓存
 
     # ── 生命周期 ───────────────────────────────────────────────────────
 
@@ -82,6 +103,8 @@ class GitHubTrendingPlugin(Star):
         saved = await self.get_kv_data("config", None)
         if saved:
             self._config.update(saved)
+        # 同步翻译器
+        self._init_translator()
         # 同步 GitHub token 到 fetcher
         token = self._config.get("github_token", "")
         if token:
@@ -281,6 +304,10 @@ class GitHubTrendingPlugin(Star):
             async for result in self._set_token(event, arg):
                 yield result
 
+        elif subcmd == "lang":
+            async for result in self._toggle_lang(event, arg):
+                yield result
+
         elif subcmd == "status":
             async for result in self._show_status(event):
                 yield result
@@ -288,7 +315,7 @@ class GitHubTrendingPlugin(Star):
         else:
             yield event.plain_result(
                 f"⚠️ 未知子命令: {subcmd}\n"
-                "可用子命令: weekly, addhere, delhere, list, time, token, status"
+                "可用子命令: weekly, addhere, delhere, list, time, token, lang, status"
             )
 
     # ── 子命令实现 ─────────────────────────────────────────────────────
@@ -399,11 +426,35 @@ class GitHubTrendingPlugin(Star):
             f"（已清除缓存，下次请求将使用新 Token）"
         )
 
+    async def _toggle_lang(self, event: AstrMessageEvent, arg: str):
+        """开关描述翻译。"""
+        enabled = self._config.get("translate_enabled", True)
+
+        if arg and arg.lower() == "off":
+            self._config["translate_enabled"] = False
+            self._init_translator()
+            await self._save_config()
+            yield event.plain_result("✅ 描述翻译已关闭，将显示英文原文。")
+        elif arg and arg.lower() == "on":
+            self._config["translate_enabled"] = True
+            self._init_translator()
+            await self._save_config()
+            yield event.plain_result("✅ 描述翻译已开启，将显示中文翻译。")
+        else:
+            state = "开启 ✅" if enabled else "关闭 ❌"
+            yield event.plain_result(
+                f"翻译状态: {state}\n"
+                "用法:\n"
+                "  /trending lang on  — 开启中文翻译\n"
+                "  /trending lang off — 关闭（显示英文原文）"
+            )
+
     async def _show_status(self, event: AstrMessageEvent):
         """显示当前配置状态。"""
         targets = self._config.get("targets", [])
         push_time = self._config.get("push_time", "09:00")
         has_token = bool(self._config.get("github_token", ""))
+        translate_on = self._config.get("translate_enabled", True)
 
         # 计算下次推送时间
         sleep_sec = self._calc_sleep_seconds()
@@ -415,8 +466,9 @@ class GitHubTrendingPlugin(Star):
             f"⏰ 推送时间: {push_time}",
             f"🕐 下次推送: {next_push:%Y-%m-%d %H:%M:%S}",
             f"📌 推送目标: {len(targets)} 个",
-            f"🔑 GitHub Token: {'已设置' if has_token else '未设置（API 限流更严格）'}",
-            f"📦 数据来源: mshibanami/GitHubTrendingRSS",
+            f"🔑 GitHub Token: {'已设置' if has_token else '未设置'}",
+            f"🌐 描述翻译: {'开启 (英文→中文)' if translate_on else '关闭 (英文原文)'}",
+            f"📦 数据来源: GitHub Trending 页面实时抓取",
             f"🔖 插件版本: 1.0.0",
         ]
 
