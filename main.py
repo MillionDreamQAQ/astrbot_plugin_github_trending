@@ -35,10 +35,11 @@ except ImportError:
 
 # ── 默认配置 ────────────────────────────────────────────────────────────
 DEFAULT_CONFIG: dict = {
-    "targets": [],  # [{"type": "group"/"user", "umo": "platform:type:id"}]
+    "targets": [],
     "push_time": "09:00",
     "github_token": "",
-    "translate_enabled": True,  # 默认开启翻译
+    "translate_enabled": True,
+    "proxy": "",  # 代理地址，如 http://127.0.0.1:7890
 }
 
 PLUGIN_NAME = "astrbot_plugin_github_trending"
@@ -51,27 +52,39 @@ class GitHubTrendingPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self._config: dict = {**DEFAULT_CONFIG, **(config or {})}
+        proxy = self._config.get("proxy", "")
         self._translator: Translator | None = None
         self._init_translator()
         self._fetcher = TrendingFetcher(
             github_token=self._config.get("github_token", ""),
             translator=self._translator,
+            proxy=proxy,
         )
         self._scheduler_task: asyncio.Task | None = None
         self._running = False
 
+    def _sync_proxy(self):
+        """将代理配置同步到 fetcher 和 translator。"""
+        proxy = self._config.get("proxy", "")
+        self._fetcher._proxy = proxy
+        if hasattr(self._fetcher, "clear_cache"):
+            self._fetcher.clear_cache()
+        if self._translator:
+            self._translator._proxy = proxy
+
     def _init_translator(self):
         """根据配置初始化或销毁翻译器。"""
+        proxy = self._config.get("proxy", "")
         if self._config.get("translate_enabled", True):
             if self._translator is None:
-                self._translator = Translator(source="en", target="zh-CN")
+                self._translator = Translator(source="en", target="zh-CN", proxy=proxy)
         else:
             if self._translator:
                 self._translator = None
         # 同步到 fetcher
         if hasattr(self, "_fetcher"):
             self._fetcher._translator = self._translator
-            self._fetcher.clear_cache()  # 切换翻译状态后清缓存
+            self._fetcher.clear_cache()
 
     # ── 生命周期 ───────────────────────────────────────────────────────
 
@@ -105,6 +118,8 @@ class GitHubTrendingPlugin(Star):
             self._config.update(saved)
         # 同步翻译器
         self._init_translator()
+        # 同步代理到 fetcher 和 translator
+        self._sync_proxy()
         # 同步 GitHub token 到 fetcher
         token = self._config.get("github_token", "")
         if token:
@@ -309,6 +324,10 @@ class GitHubTrendingPlugin(Star):
             async for result in self._toggle_lang(event, arg):
                 yield result
 
+        elif subcmd == "proxy":
+            async for result in self._set_proxy(event, arg):
+                yield result
+
         elif subcmd == "debug":
             async for result in self._run_diagnostics(event):
                 yield result
@@ -320,7 +339,7 @@ class GitHubTrendingPlugin(Star):
         else:
             yield event.plain_result(
                 f"⚠️ 未知子命令: {subcmd}\n"
-                "可用子命令: weekly, addhere, delhere, list, time, token, lang, debug, status"
+                "可用子命令: weekly, addhere, delhere, list, time, token, lang, proxy, debug, status"
             )
 
     # ── 子命令实现 ─────────────────────────────────────────────────────
@@ -454,6 +473,27 @@ class GitHubTrendingPlugin(Star):
                 "  /trending lang off — 关闭（显示英文原文）"
             )
 
+    async def _set_proxy(self, event: AstrMessageEvent, arg: str):
+        """设置代理。"""
+        if not arg or arg.lower() == "none":
+            self._config["proxy"] = ""
+            self._sync_proxy()
+            await self._save_config()
+            yield event.plain_result("✅ 代理已清除，将使用直连。")
+        else:
+            proxy = arg.strip()
+            # 基本校验
+            if not proxy.startswith("http://") and not proxy.startswith("https://") and not proxy.startswith("socks5://"):
+                yield event.plain_result("⚠️ 代理格式无效，请使用 http://host:port 或 socks5://host:port")
+                return
+            self._config["proxy"] = proxy
+            self._sync_proxy()
+            await self._save_config()
+            yield event.plain_result(
+                f"✅ 代理已设置: {proxy}\n"
+                f"（已清除缓存，下次请求将使用代理）"
+            )
+
     async def _run_diagnostics(self, event: AstrMessageEvent):
         """诊断命令：逐项检查网络和解析是否正常。"""
         import traceback
@@ -521,7 +561,9 @@ class GitHubTrendingPlugin(Star):
 
         # 6. 配置
         token = self._config.get("github_token", "")
+        proxy = self._config.get("proxy", "")
         lines.append(f"ℹ️ Token: {'已配置' if token else '未配置'}")
+        lines.append(f"ℹ️ 代理: {proxy if proxy else '未设置（直连）'}")
         lines.append(f"ℹ️ 推送目标: {len(self._config.get('targets', []))} 个")
 
         yield event.plain_result("\n".join(lines))

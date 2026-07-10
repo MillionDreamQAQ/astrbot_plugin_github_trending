@@ -23,15 +23,19 @@ _MAX_CHUNK_SIZE = 4000
 class Translator:
     """轻量级翻译器，内置缓存避免重复请求。"""
 
-    def __init__(self, source: str = "en", target: str = "zh-CN"):
+    def __init__(self, source: str = "en", target: str = "zh-CN", proxy: str = ""):
         self.source = source
         self.target = target
+        self._proxy = proxy
         self._cache: dict[str, str] = {}
         self._session: Optional[aiohttp.ClientSession] = None
 
     async def _ensure_session(self):
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            kwargs = {}
+            if self._proxy:
+                kwargs["proxy"] = self._proxy
+            self._session = aiohttp.ClientSession(**kwargs)
 
     async def close(self):
         if self._session and not self._session.closed:

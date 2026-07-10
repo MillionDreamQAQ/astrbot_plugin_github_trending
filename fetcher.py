@@ -82,9 +82,10 @@ class TrendingFetcher:
     直接抓取 GitHub Trending 页面并解析 HTML，一个请求拿到所有数据。
     """
 
-    def __init__(self, github_token: str = "", translator=None):
+    def __init__(self, github_token: str = "", translator=None, proxy: str = ""):
         self._token = github_token
         self._translator = translator
+        self._proxy = proxy
         self._cache: dict[str, tuple[list[RepoInfo], float]] = {}
         self._cache_ttl = 300  # 5 分钟缓存
 
@@ -150,7 +151,10 @@ class TrendingFetcher:
         if self._token:
             headers["Authorization"] = f"token {self._token}"
 
-        async with aiohttp.ClientSession() as session:
+        session_kwargs = {}
+        if self._proxy:
+            session_kwargs["proxy"] = self._proxy
+        async with aiohttp.ClientSession(**session_kwargs) as session:
             try:
                 async with session.get(url, headers=headers, timeout=15) as resp:
                     if resp.status != 200:

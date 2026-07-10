@@ -13,6 +13,7 @@
 - **⏰ 定时推送**：每天在设定时间自动推送到所有已配置目标
 - **💬 指令触发**：随时 `/trending` 手动获取
 - **🎯 多目标**：支持同时推送到多个群聊和私聊
+- **🔀 代理支持**：支持 HTTP/HTTPS/SOCKS5 代理，国内服务器也能正常使用翻译
 - **🔑 Token 可选**：不配置也可正常使用
 
 ## 📦 安装
@@ -34,14 +35,28 @@ pip install -r requirements.txt
 | `/trending list` | 查看所有推送目标 |
 | `/trending time 09:00` | 设置每日推送时间 |
 | `/trending lang on/off` | 开启/关闭描述翻译（默认开启） |
+| `/trending proxy http://x.x.x.x:port` | 设置代理 |
 | `/trending token ghp_xxx` | 设置 GitHub Token（可选） |
+| `/trending debug` | 诊断：逐项检查网络/解析/翻译 |
 | `/trending status` | 查看当前配置和状态 |
 
 ## ⚙️ 配置说明
 
+### 代理设置
+
+如果服务器在国内，访问 GitHub 或 Google 翻译可能不稳定。可通过代理解决：
+
+```bash
+/trending proxy http://127.0.0.1:7890    # 设置 HTTP 代理
+/trending proxy socks5://127.0.0.1:1080  # 设置 SOCKS5 代理
+/trending proxy none                      # 清除代理，恢复直连
+```
+
+设置后自动清除缓存，下次请求立即生效。`/trending debug` 可验证代理是否正常工作。
+
 ### 描述翻译
 
-默认自动将英文描述翻译为中文，使用 Google 免费翻译接口，无需 API Key。翻译失败自动降级保留原文。
+默认自动将英文描述翻译为中文，使用 Google 免费翻译接口，无需 API Key。
 
 ```bash
 /trending lang off   # 关闭翻译，显示英文原文
@@ -49,17 +64,31 @@ pip install -r requirements.txt
 /trending lang       # 查看当前状态
 ```
 
+> ⚠️ 如果翻译不生效（图片和文字均为英文），先跑 `/trending debug` 检查翻译测试是否通过。若失败，通常是网络问题，建议配置代理后重试。
+
+### 故障排查
+
+遇到问题先运行 `/trending debug`，它会逐项检查：
+
+```
+✅ GitHub 连通: HTTP 200
+✅ Trending 页面: 614,880 字符
+✅ HTML 解析: 14 个仓库
+✅ 完整 fetch: 14 个仓库
+ℹ️ 代理: http://127.0.0.1:7890
+✅ 翻译器: 就绪
+   翻译测试: 'Hello world test' → '你好世界测试'
+   实际翻译覆盖: 14/14 条描述含中文
+```
+
+常见问题：
+- 翻译覆盖 0/14 → Google API 不可达，设置代理解决
+- HTML 解析 0 个仓库 → 页面结构可能变化，检查更新
+- GitHub 不可达 → 网络问题，尝试设置代理
+
 ### 数据来源
 
-直接抓取 [GitHub Trending](https://github.com/trending) 页面，一次请求拿到全部数据。与网站实时同步，无需担心 RSS 延迟。
-
-### GitHub Token（可选）
-
-不配置也可正常使用。如果遇到限流可配置：
-
-1. 访问 [GitHub Settings → Personal access tokens](https://github.com/settings/tokens)
-2. 生成 classic token（无需 scope）
-3. 私聊中 `/trending token ghp_xxx` 配置
+直接抓取 [GitHub Trending](https://github.com/trending) 页面，一次请求拿到全部数据。与网站实时同步。
 
 ### 推送配置
 
@@ -92,7 +121,7 @@ pip install -r requirements.txt
 ## 🛠️ 开发
 
 ```
-├── main.py          # 插件入口：命令处理、定时调度、消息发送
+├── main.py          # 插件入口：10 命令 + 定时调度 + 诊断 + 代理
 ├── fetcher.py       # 数据层：页面抓取 + HTML 解析 + 翻译集成 + 缓存
 ├── renderer.py      # 渲染层：2x Pillow 高清渲染（手绘图标）
 ├── translator.py    # 翻译模块：Google 免费接口 + 批量翻译 + 缓存
