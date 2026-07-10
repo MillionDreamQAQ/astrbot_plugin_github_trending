@@ -485,12 +485,12 @@ def test_renderer_basic():
         return
 
     w, h = img.size
-    if w == 800:
-        ok("宽度 = 800px")
+    if w == 1600:
+        ok("宽度 = 1600px（2x 缩放）")
     else:
-        fail(f"宽度异常: {w}（预期 800）")
-    if h > 700:
-        ok(f"高度 {h}px 合理（7 项目含 stars_today 行，预期 > 700）")
+        fail(f"宽度异常: {w}（预期 1600）")
+    if h > 1400:
+        ok(f"高度 {h}px 合理（7 项目 2x，预期 > 1400）")
     else:
         fail(f"高度 {h}px 偏小")
 
@@ -528,10 +528,10 @@ def test_renderer_large_list():
     image_bytes = render_trending(repos, "daily")
     img = _verify_png(image_bytes, label="大列表")
 
-    if img and img.size[1] > 2000:
-        ok("高度符合预期（> 2000px）")
+    if img and img.size[1] > 4000:
+        ok("高度符合预期（25 项 2x > 4000px）")
     elif img:
-        fail(f"高度异常: {img.size[1]}（预期 > 2000）")
+        fail(f"高度异常: {img.size[1]}（预期 > 4000）")
 
 
 def test_renderer_no_stars_today():
