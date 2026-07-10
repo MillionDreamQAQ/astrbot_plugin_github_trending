@@ -24,9 +24,23 @@ github.com/trending ─→ BS4 parse ─→ translate (opt) ─→ cache (5min)
 
 ## Commands
 
-`/trending [help|weekly|addhere|delhere|list|time|lang|proxy|token|debug|status]`
+`/trending [help|weekly|addhere|delhere|list|time|lang|proxy|language|community|token|debug|status]`
+
+**12 命令** — 支持按编程语言（`language python`）和社区（`community zh`）过滤，可组合。
 
 ## Key Features
+
+| 功能 | 实现 |
+|------|------|
+| 数据来源 | 直接抓取 GitHub Trending 页面，与网站实时同步 |
+| 语言过滤 | 编程语言 + 社区口语两层过滤，可组合 |
+| 图片清晰度 | 2x 缩放 1600px，144 DPI 元数据 |
+| 图标 | Pillow 手绘（五角星、三角），零 emoji 字体依赖 |
+| 翻译 | Google 免费接口，批量翻译 + 缓存，失败降级保留原文 |
+| 代理 | 支持 HTTP/HTTPS/SOCKS5，解决国内网络问题 |
+| 诊断 | `/trending debug` 逐项检查网络/解析/翻译/代理 |
+| 存储 | AstrBot KV Store |
+| 调度 | asyncio.create_task 循环 |
 
 | 功能 | 实现 |
 |------|------|

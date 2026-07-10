@@ -36,12 +36,32 @@ pip install -r requirements.txt
 | `/trending time 09:00` | 设置每日推送时间 |
 | `/trending lang on/off` | 开启/关闭描述翻译（默认开启） |
 | `/trending proxy http://x.x.x.x:port` | 设置代理 |
+| `/trending language <lang>` | 按编程语言过滤（如 python、rust） |
+| `/trending community <code>` | 按社区过滤（如 zh、ja） |
 | `/trending token ghp_xxx` | 设置 GitHub Token（可选） |
 | `/trending help` | 显示命令帮助 |
 | `/trending debug` | 诊断：逐项检查网络/解析/翻译 |
 | `/trending status` | 查看当前配置和状态 |
 
 ## ⚙️ 配置说明
+
+### 语言过滤
+
+支持两层过滤，可以组合使用：
+
+```bash
+# 编程语言过滤
+/trending language python    # 只看 Python 项目
+/trending language rust      # 只看 Rust 项目
+/trending language all        # 恢复全语言
+
+# 社区（口语）过滤
+/trending community zh       # 中文社区
+/trending community ja       # 日文社区
+/trending community all       # 不限社区
+```
+
+两个过滤可以同时生效，例如 `/trending language python` + `/trending community zh` = 中文社区的 Python 热门项目。
 
 ### 代理设置
 
