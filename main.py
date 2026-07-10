@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from astrbot.api.message_components import Image, Plain
 
 try:
     from .fetcher import TrendingFetcher
@@ -156,7 +157,6 @@ class GitHubTrendingPlugin(Star):
     async def _broadcast(self, b64_image: str, feed_type: str, links_text: str = ""):
         """将图片广播到所有配置的目标。"""
         from astrbot.core.message.message_event_result import MessageChain
-        from astrbot.api.message_components import Image, Plain
 
         title = "GitHub Trending Daily" if feed_type == "daily" else "GitHub Trending Weekly"
 
@@ -222,8 +222,10 @@ class GitHubTrendingPlugin(Star):
             yield event.plain_result(f"❌ 图片渲染失败: {e}")
             return
 
-        # 回复图片 + 链接
-        yield event.image_result(image_bytes)
+        # 回复图片（base64） + 链接
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        chain = [Image.fromBase64(b64)]
+        yield event.chain_result(chain)
         yield event.plain_result(self._build_links_text(repos, feed_type))
 
     # ── 指令处理 ───────────────────────────────────────────────────────
