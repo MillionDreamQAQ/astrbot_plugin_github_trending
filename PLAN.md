@@ -1,51 +1,45 @@
-# GitHub Trending AstrBot Plugin — Implementation Plan
+# GitHub Trending AstrBot Plugin
 
-> 最后更新: 2026-07-10 | 状态: ✅ 已实现
+> 状态: ✅ 已实现 | 更新: 2026-07-10
 
-## Architecture (Actual)
-
-```
-main.py  (plugin entry, commands, scheduler)
-├── fetcher.py     — GitHub Trending page scraping + HTML parsing + cache
-├── renderer.py    — Pillow image generation (leaderboard list)
-└── metadata.yaml  — plugin metadata
-```
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `main.py` | Plugin class, 8 commands, asyncio scheduler loop, KV config |
-| `fetcher.py` | Scrape `github.com/trending`, parse with BeautifulSoup, 5min cache |
-| `renderer.py` | Dark theme leaderboard PNG, top 3 medals, language dots, stars today |
-| `test_local.py` | Offline + online tests for fetcher and renderer |
-| `metadata.yaml` | Plugin metadata |
-| `requirements.txt` | beautifulsoup4, Pillow, aiohttp |
-
-## Data Flow (Final)
+## Architecture
 
 ```
-github.com/trending?since=daily ──→ BeautifulSoup parse ──→ RepoInfo list
-                                                                    │
-                                              Cache (5 min TTL) ←──┘
-                                                                    │
-                                              Pillow Renderer ←─────┘
-                                                                    │
-                                              image bytes (base64) ─→ send
+main.py          — 插件入口（9 命令 + asyncio 定时 + KV 配置）
+fetcher.py       — 数据层（抓取 github.com/trending → BS4 解析 → 翻译 → 缓存）
+renderer.py      — 渲染层（2x Pillow 高清渲染，手绘图标，零 emoji 依赖）
+translator.py    — 翻译（Google 免费接口，批量翻译 + 缓存）
+test_local.py    — 测试套件（64 项：fetcher / renderer / translator）
 ```
 
-## Key Design Decisions
+## Data Flow
 
-- **直接抓取** 替代 RSS+API：数据实时一致，一个请求拿全部，还多了今日新增 Star
-- **BeautifulSoup** 而非正则：更健壮地应对 HTML 结构变化
-- **asyncio.create_task** 而非 APScheduler：单一定时任务，省依赖
-- **Image.fromBase64()** 而非 image_result()：bytes 图片必须转 base64 通过消息链发送
-- **try/except ImportError** 兼容 AstrBot 包内导入和本地独立测试
+```
+github.com/trending ─→ BS4 parse ─→ translate (opt) ─→ cache (5min)
+                                                              │
+                                              Pillow 2x render ─→ base64 ─→ send
+```
+
+## Commands
+
+`/trending [weekly|addhere|delhere|list|time|lang|token|status]`
+
+## Key Features
+
+| 功能 | 实现 |
+|------|------|
+| 数据来源 | 直接抓取 GitHub Trending，与网站实时同步 |
+| 图片清晰度 | 2x 缩放 1600px，144 DPI 元数据 |
+| 图标 | Pillow 手绘（五角星、三角），不依赖 emoji 字体 |
+| 翻译 | Google 免费接口，批量翻译，静默降级 |
+| 存储 | AstrBot KV Store |
+| 调度 | asyncio.create_task 循环 |
+| 发送 | Image.fromBase64() 消息链 |
 
 ## Dependencies
 
 ```
-beautifulsoup4>=4.12.0    # HTML parsing
-Pillow>=10.0.0             # Image generation
-aiohttp>=3.8.0             # Async HTTP
+beautifulsoup4  — HTML 解析
+Pillow          — 图片渲染
+aiohttp         — HTTP 请求
 ```
