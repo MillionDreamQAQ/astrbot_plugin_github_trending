@@ -39,7 +39,9 @@ DEFAULT_CONFIG: dict = {
     "push_time": "09:00",
     "github_token": "",
     "translate_enabled": True,
-    "proxy": "",  # 代理地址，如 http://127.0.0.1:7890
+    "proxy": "",
+    "language": "",  # 编程语言过滤，如 "python"。空 = 全语言
+    "spoken_language": "",  # 社区语言，如 "zh"、"ja"。空 = 不限
 }
 
 PLUGIN_NAME = "astrbot_plugin_github_trending"
@@ -71,6 +73,13 @@ class GitHubTrendingPlugin(Star):
             self._fetcher.clear_cache()
         if self._translator:
             self._translator._proxy = proxy
+
+    def _get_lang_args(self) -> dict:
+        """获取当前语言过滤配置。"""
+        return {
+            "language": self._config.get("language", ""),
+            "spoken_language": self._config.get("spoken_language", ""),
+        }
 
     def _init_translator(self):
         """根据配置初始化或销毁翻译器。"""
@@ -183,7 +192,7 @@ class GitHubTrendingPlugin(Star):
         logger.info(f"[GitHubTrending] 开始每日推送，目标数: {len(targets)}")
 
         try:
-            repos = await self._fetcher.fetch("daily")
+            repos = await self._fetcher.fetch("daily", **self._get_lang_args())
             image_bytes = render_trending(repos, "daily")
             b64 = base64.b64encode(image_bytes).decode("utf-8")
             links_text = self._build_links_text(repos, "daily")
@@ -244,7 +253,8 @@ class GitHubTrendingPlugin(Star):
         yield event.plain_result(f"🔍 正在获取 GitHub Trending {feed_type} 榜单...")
 
         try:
-            repos = await self._fetcher.fetch(feed_type)
+            lang = self._config.get("language", "")
+            repos = await self._fetcher.fetch(feed_type, **self._get_lang_args())
         except Exception as e:
             logger.exception(f"[GitHubTrending] 获取榜单失败 ({feed_type})")
             yield event.plain_result(f"❌ 获取榜单失败: {e}")
@@ -332,6 +342,14 @@ class GitHubTrendingPlugin(Star):
             async for result in self._set_proxy(event, arg):
                 yield result
 
+        elif subcmd == "language":
+            async for result in self._set_language(event, arg):
+                yield result
+
+        elif subcmd == "community":
+            async for result in self._set_community(event, arg):
+                yield result
+
         elif subcmd == "debug":
             async for result in self._run_diagnostics(event):
                 yield result
@@ -343,7 +361,7 @@ class GitHubTrendingPlugin(Star):
         else:
             yield event.plain_result(
                 f"⚠️ 未知子命令: {subcmd}\n"
-                "可用子命令: weekly, addhere, delhere, list, time, token, lang, proxy, debug, status"
+                "可用子命令: weekly, addhere, delhere, list, time, lang, proxy, language, community, token, debug, status"
             )
 
     # ── 子命令实现 ─────────────────────────────────────────────────────
@@ -361,6 +379,8 @@ class GitHubTrendingPlugin(Star):
             "/trending time HH:MM    设置推送时间（如 09:00）\n"
             "/trending lang on/off   开关中文翻译\n"
             "/trending proxy URL     设置代理（如 http://127.0.0.1:7890）\n"
+            "/trending language LANG 按编程语言过滤（如 python）\n"
+            "/trending community CODE 按社区过滤（如 zh、ja）\n"
             "/trending token ghp_xxx 设置 GitHub Token\n"
             "/trending debug         诊断网络/解析/翻译\n"
             "/trending status        查看完整配置\n"
@@ -518,6 +538,50 @@ class GitHubTrendingPlugin(Star):
                 f"（已清除缓存，下次请求将使用代理）"
             )
 
+    async def _set_language(self, event: AstrMessageEvent, arg: str):
+        """设置编程语言过滤。"""
+        current = self._config.get("language", "")
+        if not arg or arg.lower() == "all":
+            self._config["language"] = ""
+            self._fetcher.clear_cache()
+            await self._save_config()
+            yield event.plain_result("✅ 语言过滤已清除，将显示全语言榜单。")
+        else:
+            lang = arg.strip().lower()
+            self._config["language"] = lang
+            self._fetcher.clear_cache()
+            await self._save_config()
+            yield event.plain_result(
+                f"✅ 编程语言过滤已设置: {lang}\n"
+                f"（已清除缓存，下次请求将显示 {lang} 榜单）\n"
+                f"使用 /trending language all 恢复全语言"
+            )
+
+    async def _set_community(self, event: AstrMessageEvent, arg: str):
+        """设置社区（口语）过滤。"""
+        code_map = {
+            "zh": "中文", "ja": "日文", "ko": "韩文", "fr": "法文",
+            "de": "德文", "es": "西班牙文", "pt": "葡萄牙文", "ru": "俄文",
+        }
+        current = self._config.get("spoken_language", "")
+        if not arg or arg.lower() == "all":
+            self._config["spoken_language"] = ""
+            self._fetcher.clear_cache()
+            await self._save_config()
+            yield event.plain_result("✅ 社区过滤已清除，不限社区。")
+        else:
+            code = arg.strip().lower()
+            label = code_map.get(code, code)
+            self._config["spoken_language"] = code
+            self._fetcher.clear_cache()
+            await self._save_config()
+            yield event.plain_result(
+                f"✅ 社区过滤已设置: {label} ({code})\n"
+                f"（已清除缓存，下次请求将显示 {label} 社区榜单）\n"
+                f"常用代码: zh(中文) ja(日文) ko(韩文) fr(法文) de(德文)\n"
+                f"使用 /trending community all 恢复不限"
+            )
+
     async def _run_diagnostics(self, event: AstrMessageEvent):
         """诊断命令：逐项检查网络和解析是否正常。"""
         import traceback
@@ -557,7 +621,8 @@ class GitHubTrendingPlugin(Star):
 
         # 4. 完整 fetch（含缓存状态）
         try:
-            repos2 = await self._fetcher.fetch("daily")
+            lang = self._config.get("language", "")
+            repos2 = await self._fetcher.fetch("daily", language=lang)
             lines.append(f"✅ 完整 fetch: {len(repos2)} 个仓库")
         except Exception as e:
             lines.append(f"❌ 完整 fetch: {e}")
@@ -586,9 +651,12 @@ class GitHubTrendingPlugin(Star):
         # 6. 配置
         token = self._config.get("github_token", "")
         proxy = self._config.get("proxy", "")
+        pl = self._config.get("language", "") or "全语言"
+        sl = self._config.get("spoken_language", "") or "不限"
         lines.append(f"ℹ️ Token: {'已配置' if token else '未配置'}")
         lines.append(f"ℹ️ 代理: {proxy if proxy else '未设置（直连）'}")
-        lines.append(f"ℹ️ 推送目标: {len(self._config.get('targets', []))} 个")
+        lines.append(f"ℹ️ 编程语言: {pl}")
+        lines.append(f"ℹ️ 社区: {sl}")
 
         yield event.plain_result("\n".join(lines))
 
@@ -603,12 +671,16 @@ class GitHubTrendingPlugin(Star):
         sleep_sec = self._calc_sleep_seconds()
         next_push = datetime.now() + timedelta(seconds=sleep_sec)
 
+        pl = self._config.get("language", "") or "全语言"
+        sl = self._config.get("spoken_language", "") or "不限"
         lines = [
             "📊 GitHub Trending 插件状态",
             "─────────────────────────────",
             f"⏰ 推送时间: {push_time}",
             f"🕐 下次推送: {next_push:%Y-%m-%d %H:%M:%S}",
             f"📌 推送目标: {len(targets)} 个",
+            f"📂 编程语言: {pl}",
+            f"🌍 社区: {sl}",
             f"🔑 GitHub Token: {'已设置' if has_token else '未设置'}",
             f"🌐 描述翻译: {'开启 (英文→中文)' if translate_on else '关闭 (英文原文)'}",
             f"📦 数据来源: GitHub Trending 页面实时抓取",

@@ -91,11 +91,13 @@ class TrendingFetcher:
 
     # ── 缓存 ─────────────────────────────────────────────────────────────
 
-    def _cache_key(self, feed_type: str) -> str:
-        return f"trending_{feed_type}"
+    def _cache_key(self, feed_type: str, language: str = "", spoken_language: str = "") -> str:
+        pl = language or "all"
+        sl = spoken_language or "all"
+        return f"trending_{feed_type}_{pl}_{sl}"
 
-    def _get_cached(self, feed_type: str) -> Optional[list[RepoInfo]]:
-        key = self._cache_key(feed_type)
+    def _get_cached(self, feed_type: str, language: str = "", spoken_language: str = "") -> Optional[list[RepoInfo]]:
+        key = self._cache_key(feed_type, language, spoken_language)
         entry = self._cache.get(key)
         if entry:
             data, ts = entry
@@ -104,8 +106,8 @@ class TrendingFetcher:
             del self._cache[key]
         return None
 
-    def _set_cache(self, feed_type: str, data: list[RepoInfo]) -> None:
-        self._cache[self._cache_key(feed_type)] = (data, time.time())
+    def _set_cache(self, feed_type: str, data: list[RepoInfo], language: str = "", spoken_language: str = "") -> None:
+        self._cache[self._cache_key(feed_type, language, spoken_language)] = (data, time.time())
 
     def clear_cache(self) -> None:
         self._cache.clear()
@@ -137,10 +139,21 @@ class TrendingFetcher:
 
     # ── HTML 抓取 & 解析 ──────────────────────────────────────────────────
 
-    async def _fetch_html(self, feed_type: str) -> str:
-        """获取 GitHub Trending 页面 HTML。"""
+    async def _fetch_html(self, feed_type: str, language: str = "", spoken_language: str = "") -> str:
+        """获取 GitHub Trending 页面 HTML。
+
+        Args:
+            feed_type: "daily" 或 "weekly"
+            language: 编程语言过滤，如 "python"。空 = 全语言。
+            spoken_language: 社区语言，如 "zh"、"ja"。空 = 不限。
+        """
         since = "daily" if feed_type == "daily" else "weekly"
-        url = f"{TRENDING_URL}?since={since}"
+        if language:
+            url = f"{TRENDING_URL}/{language}?since={since}"
+        else:
+            url = f"{TRENDING_URL}?since={since}"
+        if spoken_language:
+            url += f"&spoken_language_code={spoken_language}"
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -275,22 +288,24 @@ class TrendingFetcher:
 
     # ── 公开接口 ──────────────────────────────────────────────────────────
 
-    async def fetch(self, feed_type: str = "daily") -> list[RepoInfo]:
+    async def fetch(self, feed_type: str = "daily", language: str = "", spoken_language: str = "") -> list[RepoInfo]:
         """获取 trending 数据（优先缓存）。
 
         Args:
             feed_type: "daily" 或 "weekly"
+            language: 编程语言过滤，如 "python"。空 = 全语言。
+            spoken_language: 社区语言，如 "zh"、"ja"。空 = 不限。
 
         Returns:
             RepoInfo 列表，按排名顺序排列。
         """
         # 查缓存
-        cached = self._get_cached(feed_type)
+        cached = self._get_cached(feed_type, language, spoken_language)
         if cached is not None:
             return cached
 
         # 抓取页面
-        html = await self._fetch_html(feed_type)
+        html = await self._fetch_html(feed_type, language, spoken_language)
 
         # 解析 HTML
         repos = self._parse_html(html)
@@ -300,10 +315,15 @@ class TrendingFetcher:
             await self._translate_descriptions(repos)
 
         if not repos:
+            parts = [feed_type]
+            if language:
+                parts.append(language)
+            if spoken_language:
+                parts.append(f"spoken={spoken_language}")
             raise RuntimeError(
-                f"未能从 GitHub Trending 页面解析到任何仓库（{feed_type}）。"
+                f"未能从 GitHub Trending 页面解析到任何仓库（{', '.join(parts)}）。"
             )
 
         # 写缓存
-        self._set_cache(feed_type, repos)
+        self._set_cache(feed_type, repos, language, spoken_language)
         return repos
