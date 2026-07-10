@@ -78,7 +78,7 @@ class GitHubTrendingPlugin(Star):
 
     async def _load_config(self):
         """从 KV 存储加载配置。"""
-        saved = await self.get_kv_data("config")
+        saved = await self.get_kv_data("config", None)
         if saved:
             self._config.update(saved)
         # 同步 GitHub token 到 fetcher
