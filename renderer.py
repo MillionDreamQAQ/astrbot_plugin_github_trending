@@ -1,10 +1,12 @@
 """GitHub Trending 图片渲染器。
 
 使用 Pillow 生成排行榜风格的列表图片。
+所有图标用 Pillow 原生绘制，不依赖 emoji 字体。
 """
 from __future__ import annotations
 
 import io
+import math
 import os
 import sys
 from datetime import datetime
@@ -160,6 +162,25 @@ def _get_medal_info(rank: int) -> tuple[str, str, str]:
         return CARD_BG, TEXT_SECONDARY, str(rank)
 
 
+def _draw_star(draw: ImageDraw.ImageDraw, cx: int, cy: int, r: int, fill: str):
+    """在 (cx, cy) 画一个五角星（纯 Pillow 绘制，无需 emoji 字体）。"""
+    points = []
+    for i in range(5):
+        outer_angle = i * 4 * math.pi / 5 - math.pi / 2
+        inner_angle = outer_angle + 2 * math.pi / 10
+        points.append((cx + r * math.cos(outer_angle), cy + r * math.sin(outer_angle)))
+        points.append((cx + r * 0.38 * math.cos(inner_angle), cy + r * 0.38 * math.sin(inner_angle)))
+    draw.polygon(points, fill=fill)
+
+
+def _draw_triangle_up(draw: ImageDraw.ImageDraw, x: int, y: int, size: int, fill: str):
+    """在 (x, y) 为左上角画一个向上的小三角。"""
+    draw.polygon(
+        [(x + size / 2, y), (x, y + size), (x + size, y + size)],
+        fill=fill,
+    )
+
+
 # ── 主渲染函数 ─────────────────────────────────────────────────────────
 
 
@@ -301,10 +322,14 @@ def render_trending(
         name_display = _truncate_text(full_name, font_name, repo_name_max_w)
         draw.text((name_x, name_y), name_display, fill=TEXT_PRIMARY, font=font_name)
 
-        # ── Star 数（右对齐） ─────────────────────────────────────
-        stars_text = f"⭐ {repo.stars_str}"
+        # ── Star 数（右对齐，五角星图标 + 数字） ──────────────────
+        stars_text = repo.stars_str
         stars_bbox = draw.textbbox((0, 0), stars_text, font=font_stars)
         stars_w = stars_bbox[2] - stars_bbox[0]
+        star_icon_r = 7
+        star_icon_x = card_right - stars_w - star_icon_r * 2 - 6
+        star_icon_y = name_y + 8
+        _draw_star(draw, star_icon_x + star_icon_r, star_icon_y + star_icon_r, star_icon_r, ACCENT_ORANGE)
         draw.text(
             (card_right - stars_w, name_y),
             stars_text,
@@ -344,11 +369,15 @@ def render_trending(
                 font=font_lang,
             )
 
-        # 今日新增 star（右对齐）
+        # 今日新增 star（右对齐，三角图标 + 文本）
         if repo.stars_today > 0:
-            today_text = f"🔥 +{repo.stars_today_str} today"
+            today_text = f"+{repo.stars_today_str} today"
             today_bbox = draw.textbbox((0, 0), today_text, font=font_lang)
             today_w = today_bbox[2] - today_bbox[0]
+            tri_size = 8
+            tri_x = card_right - today_w - tri_size - 5
+            tri_y = lang_y + 5
+            _draw_triangle_up(draw, tri_x, tri_y, tri_size, ACCENT_ORANGE)
             draw.text(
                 (card_right - today_w, lang_y),
                 today_text,
