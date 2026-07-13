@@ -2,21 +2,18 @@
 
 🔥 GitHub Trending 榜单推送插件 for AstrBot。
 
-每天自动抓取 GitHub Trending 热门仓库，渲染为高清排行榜图片，推送到指定的群聊或私聊。
-
-> 🚧 **下周计划**：独立订阅系统 — 每个群可设置独立的推送时间和语言/社区过滤，同一群支持多个榜单订阅。
+每天自动抓取 GitHub Trending 热门仓库，渲染为高清排行榜图片，推送到指定的群聊或私聊。支持独立订阅系统：每个群可设置独立的推送时间和语言/社区过滤，同一群可同时订阅多个榜单。
 
 ## ✨ 功能
 
 - **📊 排行榜图片**：深色 GitHub 风格，展示排名、仓库名、描述、语言、Star 数、今日新增 Star
+- **📬 独立订阅**：每个群/私聊独立设置推送时间和语言/社区，同一群支持多个榜单订阅
 - **🌐 中文翻译**：自动将英文描述翻译为中文（可开关），翻译失败静默降级保留原文
 - **🔌 实时数据**：直接抓取 GitHub Trending 页面，与网站完全同步
 - **🖼️ 高清渲染**：2x 缩放 1600px 宽，手绘图标零 emoji 依赖，高 DPI 屏幕清晰锐利
-- **⏰ 定时推送**：每天在设定时间自动推送到所有已配置目标
+- **⏰ 定时推送**：每分钟轮询，支持任意数量的不同推送时间
 - **💬 指令触发**：随时 `/trending` 手动获取
-- **🎯 多目标**：支持同时推送到多个群聊和私聊
 - **🔀 代理支持**：支持 HTTP/HTTPS/SOCKS5 代理，国内服务器也能正常使用翻译
-- **🔑 Token 可选**：不配置也可正常使用
 
 ## 📦 安装
 
@@ -32,9 +29,10 @@ pip install -r requirements.txt
 |------|------|
 | `/trending` | 获取今日 GitHub Trending 榜单 |
 | `/trending weekly` | 获取本周 GitHub Trending 榜单 |
-| `/trending addhere` | 将当前群聊/私聊加入每日推送 |
-| `/trending delhere` | 将当前群聊/私聊移出每日推送 |
-| `/trending list` | 查看所有推送目标 |
+| `/trending addhere [参数...]` | 创建订阅（参数顺序任意） |
+| `/trending delhere [id]` | 删除订阅（无 id 则删全部） |
+| `/trending list` | 查看所有订阅 |
+| `/trending sub <id> <操作>` | 管理订阅（enable/disable/time/language/community） |
 | `/trending time 09:00` | 设置每日推送时间 |
 | `/trending lang on/off` | 开启/关闭描述翻译（默认开启） |
 | `/trending proxy http://x.x.x.x:port` | 设置代理 |
@@ -46,6 +44,46 @@ pip install -r requirements.txt
 | `/trending status` | 查看当前配置和状态 |
 
 ## ⚙️ 配置说明
+
+### 订阅管理
+
+每个群/私聊可以创建**多个订阅**，每个订阅独立设置推送时间和过滤条件。
+
+参数规则（`addhere` 后的参数顺序任意）：
+
+| 参数特征 | 识别为 |
+|----------|--------|
+| 含 `:` 的（如 `09:00`） | 推送时间 |
+| 2 字母如 `zh` `ja` `ko` | 社区代码 |
+| 其他如 `python` `rust` | 编程语言 |
+
+```bash
+# 创建订阅（使用默认设置）
+/trending addhere
+
+# 指定各维度（顺序任意）
+/trending addhere 18:00 zh
+/trending addhere python zh 18:00
+/trending addhere 09:00 python zh
+
+# 查看所有订阅
+/trending list
+
+# 修改某个订阅
+/trending sub abc123 time 09:00        # 改时间
+/trending sub abc123 community zh       # 改社区
+/trending sub abc123 language python    # 改语言
+/trending sub abc123 disable            # 暂停
+/trending sub abc123 enable             # 恢复
+
+# 删除某个订阅
+/trending delhere abc123
+
+# 删除当前会话的全部订阅
+/trending delhere
+```
+
+同一个群可以同时拥有"全球榜单 9:00"和"中文社区 18:00"两个订阅，互不干扰。
 
 ### 语言过滤
 
@@ -144,7 +182,7 @@ pip install -r requirements.txt
 ## 🛠️ 开发
 
 ```
-├── main.py          # 插件入口：10 命令 + 定时调度 + 诊断 + 代理
+├── main.py          # 插件入口：13 命令 + 独立订阅调度 + 诊断 + 代理
 ├── fetcher.py       # 数据层：页面抓取 + HTML 解析 + 翻译集成 + 缓存
 ├── renderer.py      # 渲染层：2x Pillow 高清渲染（手绘图标）
 ├── translator.py    # 翻译模块：Google 免费接口 + 批量翻译 + 缓存

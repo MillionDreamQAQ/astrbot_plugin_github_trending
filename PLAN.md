@@ -1,6 +1,6 @@
 # GitHub Trending AstrBot Plugin
 
-> Phase 1: ✅ 已完成 | Phase 2: 📋 计划中 | 更新: 2026-07-10
+> Phase 1 & 2: ✅ 已完成 | 更新: 2026-07-13
 
 ## Architecture
 
@@ -37,21 +37,9 @@ github.com/trending ─→ BS4 parse ─→ translate (opt) ─→ cache (5min)
 | 翻译 | Google 免费接口，批量翻译 + 缓存，失败降级保留原文 |
 | 代理 | 支持 HTTP/HTTPS/SOCKS5，解决国内网络问题 |
 | 诊断 | `/trending debug` 逐项检查网络/解析/翻译/代理 |
+| **订阅系统** | 独立定时 + 语言/社区过滤，同群多订阅，自动迁移旧数据 |
 | 存储 | AstrBot KV Store |
-| 调度 | asyncio.create_task 循环 |
-
-## Roadmap — Phase 2 📋
-
-**独立订阅系统**（计划下周实施）：
-
-| 功能 | 说明 |
-|------|------|
-| 独立定时 | 每个订阅独立的推送时间 |
-| 独立过滤 | 每个订阅独立的语言/社区设置 |
-| 多订阅 | 同一群可创建多个订阅（如全球 + 中文社区） |
-| 订阅管理 | `/trending sub <id>` 开关/修改订阅 |
-
-数据模型：`targets[]` → `subscriptions[]`（含 id、umo、push_time、language、spoken_language、enabled）。自动迁移旧数据。
+| 调度 | 每分钟轮询，支持任意数量的不同推送时间 |
 
 ## Troubleshooting
 
