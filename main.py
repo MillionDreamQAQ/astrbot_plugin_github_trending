@@ -197,8 +197,11 @@ class GitHubTrendingPlugin(Star):
                 for k in stale:
                     del self._pushed_today[k]
 
-                # 等到下一分钟
-                await asyncio.sleep(60 - now.second)
+                # 等到下一分钟整点（+1 秒安全余量，确保进入新分钟）
+                next_minute = (now + timedelta(minutes=1)).replace(second=1, microsecond=0)
+                wait = (next_minute - now).total_seconds()
+                if wait > 0:
+                    await asyncio.sleep(wait)
 
             except asyncio.CancelledError:
                 break
