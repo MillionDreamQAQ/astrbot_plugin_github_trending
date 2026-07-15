@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
@@ -69,6 +69,37 @@ class GitHubTrendingPlugin(Star):
         self._pushed_today: dict[str, str] = {}
 
     # ── 辅助方法 ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_time(raw: str) -> str:
+        """将用户输入的时间规范化为 HH:MM 格式（零填充）。
+
+        解决 '9:00' != '09:00' 导致定时永不触发的问题。
+        """
+        raw = raw.strip()
+        try:
+            h, m = map(int, raw.split(":"))
+            if 0 <= h <= 23 and 0 <= m <= 59:
+                return f"{h:02d}:{m:02d}"
+        except (ValueError, TypeError):
+            pass
+        return raw  # 无效格式原样返回，由调用方校验
+
+    def _normalize_all_subscription_times(self):
+        """修复已存储的订阅中非零填充的时间格式（如 '9:00' → '09:00'）。"""
+        fixed = 0
+        for sub in self._config.get("subscriptions", []):
+            raw = sub.get("push_time", "09:00")
+            normalized = self._normalize_time(raw)
+            if normalized != raw:
+                sub["push_time"] = normalized
+                fixed += 1
+                logger.info(
+                    f"[GitHubTrending] 已修复订阅 {sub.get('id', '?')} 的时间格式: "
+                    f"{raw!r} → {normalized!r}"
+                )
+        if fixed:
+            logger.info(f"[GitHubTrending] 共修复 {fixed} 个订阅的时间格式")
 
     def _sync_proxy(self):
         proxy = self._config.get("proxy", "")
@@ -161,6 +192,7 @@ class GitHubTrendingPlugin(Star):
         if saved:
             self._config.update(saved)
         self._migrate_config()
+        self._normalize_all_subscription_times()
         self._init_translator()
         self._sync_proxy()
         token = self._config.get("github_token", "")
@@ -173,7 +205,7 @@ class GitHubTrendingPlugin(Star):
     # ── 定时任务（每分钟轮询）────────────────────────────────────────────
 
     async def _scheduler_loop(self):
-        """每分钟轮询，为到达推送时间的订阅执行推送。"""
+        """每 30 秒轮询一次，到达推送时间的订阅触发推送。"""
         while self._running:
             try:
                 now = datetime.now()
@@ -189,7 +221,10 @@ class GitHubTrendingPlugin(Star):
                     if self._pushed_today.get(sub["id"]) == today_str:
                         continue
 
-                    # 异步执行推送
+                    logger.info(
+                        f"[GitHubTrending] ⏰ 触发订阅 {sub['id']} "
+                        f"({sub.get('language') or 'all'}, {sub.get('spoken_language') or 'all'})"
+                    )
                     asyncio.create_task(self._push_subscription(sub))
 
                 # 清理过期的防重记录
@@ -197,17 +232,13 @@ class GitHubTrendingPlugin(Star):
                 for k in stale:
                     del self._pushed_today[k]
 
-                # 等到下一分钟整点（+1 秒安全余量，确保进入新分钟）
-                next_minute = (now + timedelta(minutes=1)).replace(second=1, microsecond=0)
-                wait = (next_minute - now).total_seconds()
-                if wait > 0:
-                    await asyncio.sleep(wait)
+                await asyncio.sleep(30)
 
             except asyncio.CancelledError:
                 break
             except Exception:
                 logger.exception("[GitHubTrending] 调度器异常")
-                await asyncio.sleep(60)
+                await asyncio.sleep(30)
 
     async def _push_subscription(self, sub: dict):
         """为单个订阅拉取数据并推送。"""
@@ -332,7 +363,7 @@ class GitHubTrendingPlugin(Star):
 
         for part in args.split():
             if ":" in part:
-                push_time = part
+                push_time = self._normalize_time(part)
             elif len(part) == 2 and part.lower() in self._COMMUNITY_CODES:
                 community = part.lower()
             else:
@@ -432,7 +463,7 @@ class GitHubTrendingPlugin(Star):
             if not value or ":" not in value:
                 yield event.plain_result("⚠️ 格式: /trending sub <id> time HH:MM")
                 return
-            sub["push_time"] = value
+            sub["push_time"] = self._normalize_time(value)
             await self._save_config()
             yield event.plain_result(f"✅ 订阅 {sub_id} 推送时间已改为 {value}。")
         elif action == "language":
@@ -547,7 +578,7 @@ class GitHubTrendingPlugin(Star):
         except (ValueError, TypeError):
             yield event.plain_result("⚠️ 时间格式无效。")
             return
-        self._config["push_time"] = arg
+        self._config["push_time"] = self._normalize_time(arg)
         await self._save_config()
         yield event.plain_result(f"✅ 默认推送时间已设为 {arg}（新创建的订阅将使用此时间）")
 
